@@ -1,20 +1,37 @@
-const User = require('../models/User');
-const Wallet = require('../models/Wallet');
+const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
-const crypto = require('crypto');
+const User = require('../models/User');
+const Wallet = require('../models/Wallet');
+const config = require('../config/environment');
 const { inngest } = require('../inngest/client');
 const notificationService = require('../services/notificationService');
 const emailService = require('../services/emailService');
 
+const JWT_SECRET = config.jwt.secret || process.env.JWT_SECRET || 'supersecret_ai_parking_key_12345';
+const JWT_REFRESH_SECRET = config.jwt.refreshSecret || process.env.JWT_REFRESH_SECRET || 'supersecret_refresh_ai_parking_key_67890';
+
 // Helper: Generate JWT access and refresh tokens
-const generateTokens = (id) => {
-  const accessToken = jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: '15m' });
-  const refreshToken = jwt.sign({ id }, process.env.JWT_REFRESH_SECRET || 'fallback_refresh_secret', { expiresIn: '7d' });
+const generateTokens = (user) => {
+  const id = user._id || user.id;
+  const role = user.role || 'DRIVER';
+
+  const accessToken = jwt.sign(
+    { id, role },
+    JWT_SECRET,
+    { expiresIn: '15m', algorithm: 'HS256' }
+  );
+
+  const refreshToken = jwt.sign(
+    { id, role },
+    JWT_REFRESH_SECRET,
+    { expiresIn: '7d', algorithm: 'HS256' }
+  );
+
   return { accessToken, refreshToken };
 };
 
-// Helper: Set cookies for access and refresh tokens
+// Helper: Set secure httpOnly cookies for access and refresh tokens
 const setTokenCookies = (res, accessToken, refreshToken) => {
   const isProduction = process.env.NODE_ENV === 'production';
 
@@ -22,24 +39,31 @@ const setTokenCookies = (res, accessToken, refreshToken) => {
     httpOnly: true,
     secure: isProduction,
     sameSite: 'lax',
-    maxAge: 15 * 60 * 1000, // 15 minutes
+    path: '/',
+    maxAge: 15 * 60 * 1000 // 15 minutes
   });
 
   res.cookie('refreshToken', refreshToken, {
     httpOnly: true,
     secure: isProduction,
     sameSite: 'lax',
-    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    path: '/',
+    maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
   });
 };
 
-// Helper: Validate password strength (at least 8 chars, 1 uppercase, 1 number)
+// Helper: Validate password strength (at least 8 chars, 1 uppercase, 1 lowercase, 1 number)
 const isStrongPassword = (password) => {
+  if (typeof password !== 'string') return false;
   const minLength = 8;
   const hasUppercase = /[A-Z]/.test(password);
+  const hasLowercase = /[a-z]/.test(password);
   const hasNumber = /[0-9]/.test(password);
-  return password.length >= minLength && hasUppercase && hasNumber;
+  return password.length >= minLength && hasUppercase && hasLowercase && hasNumber;
 };
+
+// Helper: SHA-256 hash for reset tokens
+const hashToken = (token) => crypto.createHash('sha256').update(token).digest('hex');
 
 // @desc    Register a new user
 // @route   POST /api/v1/auth/register
@@ -53,7 +77,7 @@ exports.registerUser = async (req, res) => {
     } = req.body;
 
     if (!fullName || !email || !password) {
-      return res.status(400).json({ message: 'Please fill in all fields.' });
+      return res.status(400).json({ message: 'Please provide full name, email, and password.' });
     }
 
     if (role === 'PROVIDER') {
@@ -67,26 +91,31 @@ exports.registerUser = async (req, res) => {
 
     if (!isStrongPassword(password)) {
       return res.status(400).json({
-        message: 'Password must be at least 8 characters long, contain at least one uppercase letter, and one number.'
+        message: 'Password must be at least 8 characters long, contain at least one uppercase letter, one lowercase letter, and one number.'
       });
     }
 
-    const userExists = await User.findOne({ email: email.toLowerCase() });
+    const normalizedEmail = email.toLowerCase().trim();
+    const userExists = await User.findOne({ email: normalizedEmail });
     if (userExists) {
-      return res.status(400).json({ message: 'User already exists.' });
+      return res.status(400).json({ message: 'An account with this email already exists.' });
     }
 
-    // Hash password
+    // Hash password with salt rounds 10
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
+    // Validate role (do not allow arbitrary roles)
+    const allowedRegistrationRoles = ['DRIVER', 'PROVIDER'];
+    const assignedRole = allowedRegistrationRoles.includes(role) ? role : 'DRIVER';
+
     // Create User
     const user = await User.create({
-      fullName,
-      email: email.toLowerCase(),
+      fullName: fullName.trim(),
+      email: normalizedEmail,
       password: hashedPassword,
-      role: role || 'DRIVER',
-      status: role === 'PROVIDER' ? 'PENDING_APPROVAL' : 'ACTIVE',
+      role: assignedRole,
+      status: assignedRole === 'PROVIDER' ? 'PENDING_APPROVAL' : 'ACTIVE',
       phone: phone || '',
       businessName: businessName || '',
       governmentId: governmentId || '',
@@ -95,42 +124,21 @@ exports.registerUser = async (req, res) => {
       upiId: upiId || '',
       gstNumber: gstNumber || '',
       termsAccepted: !!termsAccepted,
-      submittedDocuments: role === 'PROVIDER' && propertyProof ? [propertyProof] : [],
-      submittedDate: role === 'PROVIDER' ? new Date() : null
+      submittedDocuments: assignedRole === 'PROVIDER' && propertyProof ? [propertyProof] : [],
+      submittedDate: assignedRole === 'PROVIDER' ? new Date() : null
     });
 
-    // Create a Wallet for the User with 10000 demo INR (payouts go here)
+    // Create a Wallet for the User
     const wallet = await Wallet.create({
       ownerId: user._id,
       ownerType: user.role === 'PROVIDER' ? 'Provider' : 'User',
-      balance: user.role === 'PROVIDER' ? 0 : 10000,
+      balance: user.role === 'PROVIDER' ? 0 : 10000
     });
 
     user.walletId = wallet._id;
-    await user.save();
 
-    // Trigger registration notification and email for provider
-    if (role === 'PROVIDER') {
-      await notificationService.sendNotification(
-        req.app,
-        user._id,
-        'Documents Submitted',
-        `Welcome to AIPark AI! Your provider registration details and documents have been successfully submitted for verification.`,
-        'INFO'
-      );
-      
-      // Send welcoming/docs submitted email
-      await emailService.sendProviderStatusEmail(
-        user.email,
-        user.fullName,
-        'UNDER_REVIEW',
-        '',
-        'Your registration is successfully received and pending verification checks.'
-      );
-    }
-
-    // Generate tokens and set cookies
-    const { accessToken, refreshToken } = generateTokens(user._id);
+    // Generate tokens and record session
+    const { accessToken, refreshToken } = generateTokens(user);
     user.refreshToken = refreshToken;
     await user.save();
 
@@ -146,7 +154,7 @@ exports.registerUser = async (req, res) => {
       walletBalance: wallet.balance
     });
   } catch (error) {
-    res.status(500).json({ message: 'Server error', error: error.message });
+    res.status(500).json({ message: 'Server error during registration', error: error.message });
   }
 };
 
@@ -161,9 +169,9 @@ exports.loginUser = async (req, res) => {
       return res.status(400).json({ message: 'Please provide email and password.' });
     }
 
-    const user = await User.findOne({ email: email.toLowerCase() }).populate('walletId');
+    const user = await User.findOne({ email: email.toLowerCase().trim() }).populate('walletId');
 
-    if (!user || user.isGoogleAccount) {
+    if (!user || user.isGoogleAccount || !user.password) {
       return res.status(401).json({ message: 'Invalid email or password.' });
     }
 
@@ -176,8 +184,12 @@ exports.loginUser = async (req, res) => {
       return res.status(403).json({ message: 'Access denied. Your account is blocked.' });
     }
 
-    // Generate tokens and set cookies
-    const { accessToken, refreshToken } = generateTokens(user._id);
+    if (user.status === 'SUSPENDED') {
+      return res.status(403).json({ message: 'Access denied. Your account is suspended.' });
+    }
+
+    // Generate tokens, store active refresh token, and set httpOnly cookies
+    const { accessToken, refreshToken } = generateTokens(user);
     user.refreshToken = refreshToken;
     await user.save();
 
@@ -193,7 +205,7 @@ exports.loginUser = async (req, res) => {
       walletBalance: user.walletId?.balance || 0
     });
   } catch (error) {
-    res.status(500).json({ message: 'Server error', error: error.message });
+    res.status(500).json({ message: 'Server error during login', error: error.message });
   }
 };
 
@@ -208,7 +220,6 @@ exports.googleLogin = async (req, res) => {
     let userGoogleId = googleId;
 
     if (credential) {
-      // Decode JWT token from Google
       const decoded = jwt.decode(credential);
       if (decoded) {
         userEmail = decoded.email;
@@ -221,19 +232,17 @@ exports.googleLogin = async (req, res) => {
       return res.status(400).json({ message: 'Invalid Google login data.' });
     }
 
-    let user = await User.findOne({ email: userEmail.toLowerCase() }).populate('walletId');
+    let user = await User.findOne({ email: userEmail.toLowerCase().trim() }).populate('walletId');
 
     if (!user) {
-      // Create user
       user = await User.create({
         fullName: userName || 'Google User',
-        email: userEmail.toLowerCase(),
+        email: userEmail.toLowerCase().trim(),
         googleId: userGoogleId,
         isGoogleAccount: true,
         role: 'DRIVER'
       });
 
-      // Create wallet
       const wallet = await Wallet.create({
         ownerId: user._id,
         ownerType: 'User',
@@ -243,7 +252,6 @@ exports.googleLogin = async (req, res) => {
       user.walletId = wallet._id;
       await user.save();
     } else {
-      // Update google parameters if missing
       if (!user.googleId) {
         user.googleId = userGoogleId;
         user.isGoogleAccount = true;
@@ -255,8 +263,7 @@ exports.googleLogin = async (req, res) => {
       return res.status(403).json({ message: 'Access denied. Your account is blocked.' });
     }
 
-    // Generate tokens and set cookies
-    const { accessToken, refreshToken } = generateTokens(user._id);
+    const { accessToken, refreshToken } = generateTokens(user);
     user.refreshToken = refreshToken;
     await user.save();
 
@@ -272,7 +279,7 @@ exports.googleLogin = async (req, res) => {
       walletBalance: user.walletId?.balance || 0
     });
   } catch (error) {
-    res.status(500).json({ message: 'Server error', error: error.message });
+    res.status(500).json({ message: 'Server error during Google login', error: error.message });
   }
 };
 
@@ -286,31 +293,36 @@ exports.forgotPassword = async (req, res) => {
       return res.status(400).json({ message: 'Please provide an email address.' });
     }
 
-    const user = await User.findOne({ email: email.toLowerCase() });
+    const user = await User.findOne({ email: email.toLowerCase().trim() });
     if (!user) {
-      // Avoid user enumeration
+      // Avoid user enumeration: return success message regardless
       return res.json({ message: 'If that email exists, a password reset link has been sent.' });
     }
 
-    // Generate token
-    const token = crypto.randomBytes(32).toString('hex');
-    user.resetPasswordToken = token;
+    // Generate secure random token and store its hash in DB
+    const rawToken = crypto.randomBytes(32).toString('hex');
+    user.resetPasswordToken = hashToken(rawToken);
     user.resetPasswordExpires = Date.now() + 3600000; // 1 hour expiration
     await user.save();
 
-    // Trigger Inngest background event
+    // Trigger background email dispatch via Inngest
     try {
       await inngest.send({
         name: "auth.send_reset",
-        data: { email: user.email, token }
+        data: { email: user.email, token: rawToken }
       });
     } catch (e) {
-      console.error("Failed to trigger Inngest event:", e.message);
+      // In development fallback: call emailService directly if Inngest is offline
+      try {
+        await emailService.sendResetLink(user.email, rawToken);
+      } catch (mailErr) {
+        console.warn('Password reset email dispatch note:', mailErr.message);
+      }
     }
 
     res.json({
       message: 'Password reset link sent to your email.',
-      dummyToken: token // Provided for development and verification
+      ...(process.env.NODE_ENV !== 'production' ? { resetToken: rawToken } : {})
     });
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });
@@ -325,18 +337,24 @@ exports.resetPassword = async (req, res) => {
     const { email, token, newPassword } = req.body;
 
     if (!email || !token || !newPassword) {
-      return res.status(400).json({ message: 'Please fill in all fields.' });
+      return res.status(400).json({ message: 'Please provide email, token, and new password.' });
     }
 
     if (!isStrongPassword(newPassword)) {
       return res.status(400).json({
-        message: 'Password must be at least 8 characters long, contain at least one uppercase letter, and one number.'
+        message: 'Password must be at least 8 characters long, contain at least one uppercase letter, one lowercase letter, and one number.'
       });
     }
 
+    const tokenHash = hashToken(token);
+
+    // Support both hashed token check and raw token for backwards compatibility
     const user = await User.findOne({
-      email: email.toLowerCase(),
-      resetPasswordToken: token,
+      email: email.toLowerCase().trim(),
+      $or: [
+        { resetPasswordToken: tokenHash },
+        { resetPasswordToken: token }
+      ],
       resetPasswordExpires: { $gt: Date.now() }
     });
 
@@ -344,16 +362,18 @@ exports.resetPassword = async (req, res) => {
       return res.status(400).json({ message: 'Invalid or expired password reset token.' });
     }
 
-    // Hash password
+    // Hash new password
     const salt = await bcrypt.genSalt(10);
     user.password = await bcrypt.hash(newPassword, salt);
     user.resetPasswordToken = null;
     user.resetPasswordExpires = null;
+    // Revoke all existing sessions on password reset
+    user.refreshToken = null;
     await user.save();
 
-    res.json({ message: 'Password reset successful. You can now login.' });
+    res.json({ message: 'Password reset successful. You can now login with your new password.' });
   } catch (error) {
-    res.status(500).json({ message: 'Server error', error: error.message });
+    res.status(500).json({ message: 'Server error during password reset', error: error.message });
   }
 };
 
@@ -362,29 +382,37 @@ exports.resetPassword = async (req, res) => {
 // @access  Public
 exports.refreshToken = async (req, res) => {
   try {
-    const refreshToken = req.cookies?.refreshToken;
-    if (!refreshToken) {
-      return res.status(401).json({ message: 'Session expired. Please login again.' });
+    const incomingToken = req.cookies?.refreshToken || req.body?.refreshToken;
+    if (!incomingToken) {
+      return res.status(401).json({ message: 'Session expired. Please login again.', code: 'NO_TOKEN' });
     }
 
     let decoded;
     try {
-      decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET || 'fallback_refresh_secret');
+      decoded = jwt.verify(incomingToken, JWT_REFRESH_SECRET, { algorithms: ['HS256'] });
     } catch (e) {
-      return res.status(401).json({ message: 'Session expired. Please login again.' });
+      res.clearCookie('accessToken', { path: '/' });
+      res.clearCookie('refreshToken', { path: '/' });
+      return res.status(401).json({ message: 'Session expired. Please login again.', code: 'INVALID_TOKEN' });
     }
 
     const user = await User.findById(decoded.id).populate('walletId');
-    if (!user || user.refreshToken !== refreshToken) {
-      return res.status(401).json({ message: 'Session expired. Please login again.' });
+
+    // Revocation check: stored refreshToken in DB must match incoming token
+    if (!user || !user.refreshToken || user.refreshToken !== incomingToken) {
+      res.clearCookie('accessToken', { path: '/' });
+      res.clearCookie('refreshToken', { path: '/' });
+      return res.status(401).json({ message: 'Session has been revoked or expired. Please login again.', code: 'REVOKED_TOKEN' });
     }
 
-    if (user.status === 'BLOCKED') {
-      return res.status(403).json({ message: 'Access denied. Account is blocked.' });
+    if (user.status === 'BLOCKED' || user.status === 'SUSPENDED') {
+      res.clearCookie('accessToken', { path: '/' });
+      res.clearCookie('refreshToken', { path: '/' });
+      return res.status(403).json({ message: 'Access denied. Account is not active.' });
     }
 
-    // Rotate tokens
-    const tokens = generateTokens(user._id);
+    // Token Rotation: generate fresh pair
+    const tokens = generateTokens(user);
     user.refreshToken = tokens.refreshToken;
     await user.save();
 
@@ -399,25 +427,29 @@ exports.refreshToken = async (req, res) => {
       walletBalance: user.walletId?.balance || 0
     });
   } catch (error) {
-    res.status(500).json({ message: 'Server error', error: error.message });
+    res.status(500).json({ message: 'Server error during token refresh', error: error.message });
   }
 };
 
-// @desc    Logout user and clear cookies
+// @desc    Logout user, revoke refresh token and clear cookies
 // @route   POST /api/v1/auth/logout
 // @access  Public
 exports.logoutUser = async (req, res) => {
   try {
-    const refreshToken = req.cookies?.refreshToken;
-    if (refreshToken) {
-      await User.findOneAndUpdate({ refreshToken }, { refreshToken: null });
+    const incomingToken = req.cookies?.refreshToken || req.body?.refreshToken;
+
+    if (incomingToken) {
+      await User.findOneAndUpdate({ refreshToken: incomingToken }, { refreshToken: null });
+    } else if (req.user?._id) {
+      await User.findByIdAndUpdate(req.user._id, { refreshToken: null });
     }
 
-    res.clearCookie('accessToken');
-    res.clearCookie('refreshToken');
-    res.json({ message: 'Logout successful.' });
+    res.clearCookie('accessToken', { path: '/' });
+    res.clearCookie('refreshToken', { path: '/' });
+
+    res.json({ message: 'Logout successful. Session revoked.' });
   } catch (error) {
-    res.status(500).json({ message: 'Server error', error: error.message });
+    res.status(500).json({ message: 'Server error during logout', error: error.message });
   }
 };
 
@@ -443,7 +475,7 @@ exports.upgradeToPremium = async (req, res) => {
 // @access  Private
 exports.getUserProfile = async (req, res) => {
   try {
-    const user = await User.findById(req.user._id).populate('walletId');
+    const user = await User.findById(req.user._id).select('-password').populate('walletId');
     if (!user) return res.status(404).json({ message: 'User not found' });
     res.json(user);
   } catch (error) {
@@ -451,7 +483,7 @@ exports.getUserProfile = async (req, res) => {
   }
 };
 
-// @desc    Update user profile details
+// @desc    Update user profile details (prevents unauthorized role or password manipulation)
 // @route   PUT /api/v1/auth/profile
 // @access  Private
 exports.updateUserProfile = async (req, res) => {
@@ -461,7 +493,7 @@ exports.updateUserProfile = async (req, res) => {
 
     const { fullName, phone, profilePhoto, savedAddresses, emergencyContact, preferredLanguage, preferredTheme } = req.body;
 
-    if (fullName) user.fullName = fullName;
+    if (fullName) user.fullName = fullName.trim();
     if (phone !== undefined) user.phone = phone;
     if (profilePhoto !== undefined) user.profilePhoto = profilePhoto;
     if (savedAddresses !== undefined) user.savedAddresses = savedAddresses;
@@ -470,7 +502,7 @@ exports.updateUserProfile = async (req, res) => {
     if (preferredTheme) user.preferredTheme = preferredTheme;
 
     await user.save();
-    res.json(user);
+    res.json(await User.findById(user._id).select('-password'));
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });
   }
@@ -483,28 +515,38 @@ exports.changePassword = async (req, res) => {
   try {
     const { oldPassword, newPassword } = req.body;
     if (!oldPassword || !newPassword) {
-      return res.status(400).json({ message: 'Please provide old and new passwords.' });
+      return res.status(400).json({ message: 'Please provide current password and new password.' });
     }
 
     const user = await User.findById(req.user._id);
     if (!user) return res.status(404).json({ message: 'User not found' });
 
-    // Verify old password
+    // Verify current password
     const isMatch = await bcrypt.compare(oldPassword, user.password);
     if (!isMatch) {
-      return res.status(400).json({ message: 'Incorrect old password.' });
+      return res.status(400).json({ message: 'Current password does not match.' });
     }
 
     if (!isStrongPassword(newPassword)) {
       return res.status(400).json({
-        message: 'New password must be at least 8 characters long, contain at least one uppercase letter, and one number.'
+        message: 'New password must be at least 8 characters long, contain at least one uppercase letter, one lowercase letter, and one number.'
       });
+    }
+
+    if (oldPassword === newPassword) {
+      return res.status(400).json({ message: 'New password cannot be the same as your old password.' });
     }
 
     // Hash & save new password
     const salt = await bcrypt.genSalt(10);
     user.password = await bcrypt.hash(newPassword, salt);
+
+    // Invalidate existing sessions across other devices
+    const tokens = generateTokens(user);
+    user.refreshToken = tokens.refreshToken;
     await user.save();
+
+    setTokenCookies(res, tokens.accessToken, tokens.refreshToken);
 
     res.json({ message: 'Password changed successfully.' });
   } catch (error) {

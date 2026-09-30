@@ -13,13 +13,13 @@ const {
   updateUserProfile,
   changePassword
 } = require('../controllers/authController');
-const { protect, authRateLimiter } = require('../middleware/authMiddleware');
+const { protect, authRateLimiter, loginRateLimiter } = require('../middleware/authMiddleware');
 
 // Apply IP rate limiting to all authentication-related endpoints
 router.use(authRateLimiter);
 
 router.post('/register', registerUser);
-router.post('/login', loginUser);
+router.post('/login', loginRateLimiter, loginUser);
 router.post('/google-login', googleLogin);
 router.post('/forgot-password', forgotPassword);
 router.post('/reset-password', resetPassword);

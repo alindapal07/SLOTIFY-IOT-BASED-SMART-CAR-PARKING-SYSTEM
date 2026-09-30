@@ -28,12 +28,18 @@ function minimalBooking(booking) {
 // @access  Private
 exports.getUserBookings = async (req, res) => {
   try {
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 20));
+    const skip = (page - 1) * limit;
+
     const bookings = await Booking.find({ userId: req.user._id })
       .populate('zoneId', 'name location basePricePerHour')
       .populate('slotId', 'slotIdentifier isEV')
       .populate('vehicleId', 'make model licensePlate vehicleType color')
       .sort({ createdAt: -1 })
-      .limit(20);
+      .skip(skip)
+      .limit(limit)
+      .lean();
     res.json(bookings);
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });
@@ -237,9 +243,8 @@ exports.initiateBooking = async (req, res) => {
     updatedSlot.currentBookingId = booking._id;
     await updatedSlot.save();
 
-    // Update zone available slots
-    zone.availableSlots = Math.max(0, zone.availableSlots - 1);
-    await zone.save();
+    // Update zone available slots atomically
+    await ParkingZone.findByIdAndUpdate(zoneId, { $inc: { availableSlots: -1 } });
 
     // Broadcast WebSocket update
     const io = req.app.get('io');

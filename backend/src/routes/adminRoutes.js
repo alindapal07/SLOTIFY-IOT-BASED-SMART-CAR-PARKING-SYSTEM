@@ -60,7 +60,23 @@ router.get('/stats', protect, authorize('ADMIN'), async (req, res) => {
 // @route   GET /api/v1/admin/users
 router.get('/users', protect, authorize('ADMIN'), async (req, res) => {
   try {
-    const users = await User.find().select('-password -mPin -resetPasswordToken').sort({ createdAt: -1 }).limit(200);
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(200, Math.max(1, parseInt(req.query.limit, 10) || 50));
+    const skip = (page - 1) * limit;
+
+    const [users, total] = await Promise.all([
+      User.find()
+        .select('-password -mPin -resetPasswordToken -refreshToken')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      User.countDocuments()
+    ]);
+
+    res.setHeader('X-Total-Count', total);
+    res.setHeader('X-Page', page);
+    res.setHeader('X-Limit', limit);
     res.json(users);
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });
@@ -146,12 +162,19 @@ router.delete('/users/:id', protect, authorize('ADMIN'), async (req, res) => {
 // @route   GET /api/v1/admin/providers/pending
 router.get('/providers/pending', protect, authorize('ADMIN'), async (req, res) => {
   try {
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 50));
+    const skip = (page - 1) * limit;
+
     const providers = await User.find({
       role: 'PROVIDER',
       status: { $in: ['PENDING_APPROVAL', 'UNDER_REVIEW'] }
     })
-      .select('-password -mPin -resetPasswordToken')
-      .sort({ createdAt: -1 });
+      .select('-password -mPin -resetPasswordToken -refreshToken')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean();
     res.json(providers);
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });
@@ -162,15 +185,29 @@ router.get('/providers/pending', protect, authorize('ADMIN'), async (req, res) =
 // @route   GET /api/v1/admin/providers
 router.get('/providers', protect, authorize('ADMIN'), async (req, res) => {
   try {
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 50));
+    const skip = (page - 1) * limit;
+
     const { status } = req.query;
     const filter = { role: 'PROVIDER' };
     if (status && status !== 'ALL') {
       filter.status = status;
     }
-    const providers = await User.find(filter)
-      .select('-password -mPin -resetPasswordToken')
-      .populate('reviewedBy', 'fullName email')
-      .sort({ createdAt: -1 });
+    const [providers, total] = await Promise.all([
+      User.find(filter)
+        .select('-password -mPin -resetPasswordToken -refreshToken')
+        .populate('reviewedBy', 'fullName email')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      User.countDocuments(filter)
+    ]);
+
+    res.setHeader('X-Total-Count', total);
+    res.setHeader('X-Page', page);
+    res.setHeader('X-Limit', limit);
     res.json(providers);
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });

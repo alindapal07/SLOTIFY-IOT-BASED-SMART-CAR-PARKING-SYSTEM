@@ -18,10 +18,17 @@ const IoTDevice = require('../models/IoTDevice');
 const notificationService = require('../services/notificationService');
 const walletService = require('../services/walletService');
 const { processQueueAllocation } = require('../services/queueService');
+const { acquireDistributedLock, releaseDistributedLock } = require('../config/redis');
 
 let intervalId = null;
 
 const runWatchdogCycle = async (app) => {
+  const lock = await acquireDistributedLock('job:watchdog:master_cycle', 25);
+  if (!lock) {
+    // Another monolith instance is currently executing the watchdog cycle
+    return;
+  }
+
   try {
     const now = new Date();
     const io = app ? app.get('io') : null;
@@ -32,7 +39,7 @@ const runWatchdogCycle = async (app) => {
     const expiredOffers = await WaitingQueue.find({
       status: 'Offered',
       expiresAt: { $lt: now }
-    });
+    }).limit(100);
 
     for (const entry of expiredOffers) {
       entry.status = 'Timeout';
@@ -89,7 +96,7 @@ const runWatchdogCycle = async (app) => {
       vehicleStatus: 'WAITING_FOR_ENTRY',
       arrivalDeadline: { $lt: now },
       noShowProcessed: { $ne: true }
-    });
+    }).limit(100);
 
     for (const booking of noShowBookings) {
       booking.status = 'Cancelled';
@@ -168,7 +175,7 @@ const runWatchdogCycle = async (app) => {
       endTime: { $lt: now },
       noShowProcessed: { $ne: true },
       arrivalDeadline: null
-    });
+    }).limit(100);
 
     for (const booking of expiredBookings) {
       booking.status = 'Expired';
@@ -220,7 +227,7 @@ const runWatchdogCycle = async (app) => {
       status: 'Active',
       endTime: { $lt: overstayLimit },
       lateExitNotified: false
-    });
+    }).limit(100);
 
     for (const booking of lateExitBookings) {
       booking.lateExitNotified = true;
@@ -256,7 +263,7 @@ const runWatchdogCycle = async (app) => {
     const expiredDevices = await IoTDevice.find({
       status: 'Online',
       lastHeartbeat: { $lt: expiryLimit }
-    });
+    }).limit(200);
 
     for (const device of expiredDevices) {
       device.status = 'Offline';
@@ -274,6 +281,8 @@ const runWatchdogCycle = async (app) => {
 
   } catch (err) {
     console.error('[BACKGROUND ERR]', err.message);
+  } finally {
+    await releaseDistributedLock(lock);
   }
 };
 

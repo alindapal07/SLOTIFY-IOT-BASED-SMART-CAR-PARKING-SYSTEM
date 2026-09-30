@@ -5,55 +5,193 @@ const ParkingSlot = require('../models/ParkingSlot');
 // @desc    Get nearby parking zones (geo query)
 // @route   GET /api/v1/parking/search
 // @access  Private
-// @desc    Get nearby parking zones (geo query with distance)
+// @desc    Get nearby parking zones (geo query with distance, filters & availability)
 // @route   GET /api/v1/parking/search
-// @access  Private
+// @access  Public
 exports.searchParking = async (req, res) => {
   try {
-    const { lat, lng, radius = 10000, type, ev, covered, minRating } = req.query;
+    const {
+      lat, latitude,
+      lng, lon, longitude,
+      radius = 10000,
+      type, parkingType,
+      ev, covered,
+      minRating,
+      availability, availableOnly, minAvailable,
+      price, maxPrice, minPrice,
+      vehicleType, vehicleCategory,
+      limit = 50
+    } = req.query;
 
-    if (!lat || !lng) {
+    const rawLat = lat || latitude;
+    const rawLng = lng || lon || longitude;
+
+    if (!rawLat || !rawLng) {
       return res.status(400).json({ message: 'Latitude and Longitude are required' });
     }
 
-    const parsedLat = parseFloat(lat);
-    const parsedLng = parseFloat(lng);
-    const parsedRadius = parseInt(radius);
+    const parsedLat = parseFloat(rawLat);
+    const parsedLng = parseFloat(rawLng);
 
     if (isNaN(parsedLat) || isNaN(parsedLng)) {
       return res.status(400).json({ message: 'Latitude and Longitude must be valid numeric coordinates' });
     }
 
-    const maxDist = isNaN(parsedRadius) ? 10000 : parsedRadius;
+    if (parsedLat < -90 || parsedLat > 90 || parsedLng < -180 || parsedLng > 180) {
+      return res.status(400).json({ message: 'Coordinates out of valid range (lat: [-90, 90], lng: [-180, 180])' });
+    }
 
-    // Ensure 2dsphere index is created
-    await ParkingZone.collection.createIndex({ location: '2dsphere' }).catch(() => {});
+    // Support radius in meters or km (if <= 100, treat as km)
+    let parsedRadius = parseFloat(radius);
+    if (isNaN(parsedRadius) || parsedRadius <= 0) parsedRadius = 10000;
+    else if (parsedRadius <= 100) parsedRadius *= 1000; // e.g. radius=5 -> 5000m
 
-    // Build aggregation pipeline with $geoNear (returns distance in meters)
+    const maxResults = Math.min(Math.max(1, parseInt(limit) || 50), 200);
+
+    // Build geospatial $geoNear stage
     const pipeline = [
       {
         $geoNear: {
           near: { type: 'Point', coordinates: [parsedLng, parsedLat] },
           distanceField: 'distance',
-          maxDistance: maxDist,
+          maxDistance: parsedRadius,
           spherical: true
         }
       },
-      // Only show approved, active, non-archived zones
-      { $match: { isApproved: true, status: 'Active', isArchived: { $ne: true } } }
+      // Base match: active, approved, non-archived zones
+      {
+        $match: {
+          isApproved: true,
+          status: 'Active',
+          isArchived: { $ne: true }
+        }
+      }
     ];
 
-    // Optional filters
-    if (type) pipeline.push({ $match: { parkingType: type } });
-    if (ev === 'true') pipeline.push({ $match: { hasEVCharging: true } });
-    if (covered === 'true') pipeline.push({ $match: { isCovered: true } });
-    if (minRating) pipeline.push({ $match: { rating: { $gte: parseFloat(minRating) } } });
+    // Filter: Availability
+    if (availableOnly === 'true' || availability === 'available' || availability === 'true') {
+      pipeline.push({ $match: { availableSlots: { $gt: 0 } } });
+    } else if (minAvailable && !isNaN(parseInt(minAvailable))) {
+      pipeline.push({ $match: { availableSlots: { $gte: parseInt(minAvailable) } } });
+    }
 
-    pipeline.push({ $limit: 100 });
+    // Filter: Price (basePricePerHour / hourlyPrice)
+    const upperPrice = maxPrice || price;
+    if (upperPrice && !isNaN(parseFloat(upperPrice))) {
+      pipeline.push({
+        $match: {
+          $or: [
+            { basePricePerHour: { $lte: parseFloat(upperPrice) } },
+            { hourlyPrice: { $lte: parseFloat(upperPrice) } }
+          ]
+        }
+      });
+    }
+    if (minPrice && !isNaN(parseFloat(minPrice))) {
+      pipeline.push({
+        $match: {
+          $or: [
+            { basePricePerHour: { $gte: parseFloat(minPrice) } },
+            { hourlyPrice: { $gte: parseFloat(minPrice) } }
+          ]
+        }
+      });
+    }
+
+    // Filter: Parking Type
+    const selectedType = parkingType || type;
+    if (selectedType && selectedType !== 'ALL' && selectedType !== 'All') {
+      pipeline.push({ $match: { parkingType: selectedType } });
+    }
+
+    // Filter: Vehicle Type
+    const targetVehicle = vehicleType || vehicleCategory;
+    if (targetVehicle && targetVehicle !== 'ALL' && targetVehicle !== 'All') {
+      pipeline.push({
+        $match: {
+          $or: [
+            { vehicleTypesAllowed: targetVehicle },
+            { vehicleTypesAllowed: { $exists: false } },
+            { vehicleTypesAllowed: { $size: 0 } }
+          ]
+        }
+      });
+    }
+
+    // Filter: EV Charging
+    if (ev === 'true') {
+      pipeline.push({ $match: { hasEVCharging: true } });
+    }
+
+    // Filter: Covered Parking
+    if (covered === 'true') {
+      pipeline.push({ $match: { isCovered: true } });
+    }
+
+    // Filter: Minimum Rating
+    if (minRating && !isNaN(parseFloat(minRating))) {
+      pipeline.push({ $match: { rating: { $gte: parseFloat(minRating) } } });
+    }
+
+    pipeline.push({ $limit: maxResults });
 
     const zones = await ParkingZone.aggregate(pipeline);
-    res.json(zones);
+
+    // Compute open/closed status based on Indian Standard Time (UTC+5:30)
+    const now = new Date();
+    const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
+    const ist = new Date(utc + (330 * 60000));
+    const currentMinutes = ist.getHours() * 60 + ist.getMinutes();
+
+    const enrichedZones = zones.map(zone => {
+      const distMeters = Math.round(zone.distance || 0);
+      const distKm = parseFloat((distMeters / 1000).toFixed(2));
+      const formattedDistance = distKm < 1 ? `${distMeters}m` : `${distKm}km`;
+
+      let isOpen = zone.status === 'Active';
+      if (isOpen && zone.operatingHours && zone.operatingHours !== '24/7' && zone.operatingHours !== '24x7') {
+        try {
+          let openM = 0, closeM = 1439;
+          if (zone.openTime && zone.closeTime) {
+            const [oH, oM] = zone.openTime.split(':').map(Number);
+            const [cH, cM] = zone.closeTime.split(':').map(Number);
+            if (!isNaN(oH) && !isNaN(cH)) {
+              openM = oH * 60 + (oM || 0);
+              closeM = cH * 60 + (cM || 0);
+            }
+          } else if (zone.operatingHours.includes('-')) {
+            const parts = zone.operatingHours.split('-');
+            const [oH, oM] = parts[0].trim().split(':').map(Number);
+            const [cH, cM] = parts[1].trim().split(':').map(Number);
+            if (!isNaN(oH) && !isNaN(cH)) {
+              openM = oH * 60 + (oM || 0);
+              closeM = cH * 60 + (cM || 0);
+            }
+          }
+          if (openM <= closeM) {
+            isOpen = currentMinutes >= openM && currentMinutes <= closeM;
+          } else {
+            isOpen = currentMinutes >= openM || currentMinutes <= closeM;
+          }
+        } catch (e) {
+          isOpen = true;
+        }
+      }
+
+      return {
+        ...zone,
+        distance: distMeters,
+        distanceKm: distKm,
+        formattedDistance,
+        isOpen,
+        price: zone.basePricePerHour || zone.hourlyPrice || 40,
+        openStatus: isOpen ? 'Open' : 'Closed'
+      };
+    });
+
+    res.json(enrichedZones);
   } catch (error) {
+    console.error('[searchParking Error]:', error.message);
     try {
       // Fallback: return approved+active zones without geo filtering
       const allZones = await ParkingZone.find({ isApproved: true, status: 'Active', isArchived: { $ne: true } }).limit(50);

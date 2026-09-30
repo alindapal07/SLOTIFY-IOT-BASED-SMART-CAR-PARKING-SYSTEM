@@ -5,15 +5,20 @@
  */
 const express = require('express');
 const cors = require('cors');
+const compression = require('compression');
 const { serve } = require('inngest/express');
 const config = require('./config/environment');
 const { inngest, functions } = require('./inngest/client');
 const errorHandler = require('./middleware/errorHandler');
 const { getLocalIpAddress } = require('./utils/network');
+const { isRedisActive } = require('./config/redis');
 
 const LAN_IP = getLocalIpAddress();
 
 const app = express();
+
+// High-throughput HTTP payload compression (skips payloads < 1KB)
+app.use(compression({ threshold: 1024 }));
 
 // Custom cookie parser middleware (preserves existing token extraction behavior)
 const cookieParser = (req, res, next) => {
@@ -57,9 +62,49 @@ app.use(cors({
 app.use(cookieParser);
 app.use(express.json());
 
-// Basic health check endpoint
+// Basic root endpoint
 app.get('/', (req, res) => {
   res.send('AI Smart Parking Backend is Running');
+});
+
+// Liveness probe (Kubernetes / Load Balancer fast health check)
+app.get('/liveness', (req, res) => {
+  res.status(200).json({ status: 'alive', uptime: process.uptime() });
+});
+
+// Readiness probe (verifies database connectivity)
+app.get('/readiness', (req, res) => {
+  const mongoose = require('mongoose');
+  const isDbReady = mongoose.connection.readyState === 1;
+  if (isDbReady) {
+    res.status(200).json({ status: 'ready', db: 'connected' });
+  } else {
+    res.status(503).json({ status: 'unready', db: 'disconnected' });
+  }
+});
+
+// Comprehensive Health & System Telemetry Endpoint
+app.get('/health', (req, res) => {
+  const mongoose = require('mongoose');
+  const mem = process.memoryUsage();
+  res.status(200).json({
+    status: 'healthy',
+    timestamp: new Date().toISOString(),
+    uptimeSeconds: Math.floor(process.uptime()),
+    monolith: {
+      pid: process.pid,
+      nodeVersion: process.version,
+      memory: {
+        rssMB: Math.round(mem.rss / 1024 / 1024),
+        heapUsedMB: Math.round(mem.heapUsed / 1024 / 1024),
+        heapTotalMB: Math.round(mem.heapTotal / 1024 / 1024),
+      }
+    },
+    services: {
+      database: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
+      redis: isRedisActive() ? 'connected' : 'in-memory-fallback'
+    }
+  });
 });
 
 // Inngest Event Processing Endpoint

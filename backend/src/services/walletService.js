@@ -15,14 +15,24 @@ exports.createTransaction = async ({ walletId, userId, type, category, amount, d
   });
 };
 
-// Deducts funds from user wallet and records a transaction
+// Deducts funds from user wallet using atomic conditional updates (Race-Condition Proof)
 exports.deductBalance = async (userId, amount, category, description, bookingId) => {
-  const wallet = await Wallet.findOne({ ownerId: userId });
-  if (!wallet) throw new Error('Wallet not found');
-  if (wallet.balance < amount) throw new Error(`Insufficient balance. Need ₹${amount}, have ₹${wallet.balance}`);
+  if (typeof amount !== 'number' || amount <= 0) {
+    throw new Error('Deduction amount must be a positive number.');
+  }
 
-  wallet.balance -= amount;
-  await wallet.save();
+  // Atomic conditional decrement: balance MUST be >= amount
+  const wallet = await Wallet.findOneAndUpdate(
+    { ownerId: userId, balance: { $gte: amount } },
+    { $inc: { balance: -amount } },
+    { new: true }
+  );
+
+  if (!wallet) {
+    const existingWallet = await Wallet.findOne({ ownerId: userId });
+    if (!existingWallet) throw new Error('Wallet not found');
+    throw new Error(`Insufficient balance. Need ₹${amount}, have ₹${existingWallet.balance}`);
+  }
 
   const transaction = await exports.createTransaction({
     walletId: wallet._id,
@@ -38,20 +48,18 @@ exports.deductBalance = async (userId, amount, category, description, bookingId)
   return { wallet, transaction };
 };
 
-// Credits funds to user/provider wallet and records a transaction
+// Credits funds to user/provider wallet using atomic updates (Race-Condition Proof)
 exports.creditBalance = async (userId, amount, category, description, bookingId) => {
-  let wallet = await Wallet.findOne({ ownerId: userId });
-  if (!wallet) {
-    // If no wallet exists (e.g. mock setups), auto-create one
-    wallet = await Wallet.create({
-      ownerId: userId,
-      ownerType: 'Provider',
-      balance: 0
-    });
+  if (typeof amount !== 'number' || amount <= 0) {
+    throw new Error('Credit amount must be a positive number.');
   }
 
-  wallet.balance += amount;
-  await wallet.save();
+  // Atomic increment with upsert fallback
+  const wallet = await Wallet.findOneAndUpdate(
+    { ownerId: userId },
+    { $inc: { balance: amount } },
+    { new: true, upsert: true, setDefaultsOnInsert: true }
+  );
 
   const transaction = await exports.createTransaction({
     walletId: wallet._id,

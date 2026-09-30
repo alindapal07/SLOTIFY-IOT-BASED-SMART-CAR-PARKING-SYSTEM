@@ -20,7 +20,7 @@ const userSchema = new mongoose.Schema({
   },
   role: {
     type: String,
-    enum: ['DRIVER', 'PROVIDER', 'ADMIN'],
+    enum: ['DRIVER', 'PROVIDER', 'ADMIN', 'SUPER_ADMIN'],
     default: 'DRIVER',
   },
   isPremium: {
