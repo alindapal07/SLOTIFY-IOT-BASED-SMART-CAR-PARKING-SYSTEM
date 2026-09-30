@@ -1,0 +1,46 @@
+# Root .gitignore for Smart Parking Marketplace Ecosystem
+
+# Dependencies
+node_modules/
+
+# Environment configurations and secrets
+.env
+.env.*
+!.env.example
+*.env
+!*.env.example
+*.pem
+*.key
+*.crt
+credentials/
+secrets/
+*credentials*
+*credential*
+
+# Database backups, dumps, and exports
+backups/
+*.dump
+*.bson
+*.json.gz
+*.tar.gz
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build and distribution directories
+dist/
+build/
+coverage/
+.tmp/
+temp/
+
+# IDE and OS files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+.vite/

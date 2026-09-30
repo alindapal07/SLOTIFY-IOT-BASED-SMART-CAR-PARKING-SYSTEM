@@ -1,0 +1,5 @@
+{
+  "nav": { "home": "મુખ્ય પાનું", "map": "નકશો", "wallet": "વોલેટ", "vehicles": "વાહનો", "dashboard": "ડેશબોર્ડ", "ai": "AI ઇનસાઇટ્સ", "login": "લોગિન" },
+  "dashboard": { "welcome": "સ્વાગત છે", "welcomeSub": "તમારા સ્માર્ટ પાર્કિંગ મદદનીશ", "activeSession": "સક્રિય સત્ર", "noActive": "કોઈ સક્રિય બુકિંગ નથી", "findParking": "પાર્કિંગ શોધો", "quickActions": "ઝડપી ક્રિયાઓ", "recentBookings": "તાજેતરના બુકિંગ", "walletBalance": "વોલેટ બેલેન્સ" },
+  "auth": { "welcomeBack": "સ્વાગત છે", "signIn": "સાઇન ઇન", "createAccount": "ખાતું બનાવો", "email": "ઇમેઇલ", "password": "પાસવર્ડ", "mpin": "MPIN", "verify": "ચકાસો", "forgotPassword": "પાસવર્ડ ભૂલી ગયા છો?" }
+}

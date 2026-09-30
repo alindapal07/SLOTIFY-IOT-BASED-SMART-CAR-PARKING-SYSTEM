@@ -1,0 +1,5 @@
+{
+  "nav": { "home": "ਪ੍ਰਮੁੱਖ", "map": "ਨਕਸ਼ਾ", "wallet": "ਵਾਲਿਟ", "vehicles": "ਵਾਹਨ", "dashboard": "ਡੈਸ਼ਬੋਰਡ", "ai": "AI ਇਨਸਾਈਟਸ", "login": "ਲੌਗਇਨ" },
+  "dashboard": { "welcome": "ਜੀ ਆਇਆਂ ਨੂੰ", "welcomeSub": "ਤੁਹਾਡਾ ਸਮਾਰਟ ਪਾਰਕਿੰਗ ਸਹਾਇਕ", "activeSession": "ਕਿਰਿਆਸ਼ੀਲ ਸੈਸ਼ਨ", "noActive": "ਕੋਈ ਕਿਰਿਆਸ਼ੀਲ ਬੁਕਿੰਗ ਨਹੀਂ", "findParking": "ਪਾਰਕਿੰਗ ਲੱਭੋ", "quickActions": "ਤੁਰੰਤ ਕਾਰਵਾਈਆਂ", "recentBookings": "ਹਾਲੀਆ ਬੁਕਿੰਗਾਂ", "walletBalance": "ਵਾਲਿਟ ਬੈਲੇਂਸ" },
+  "auth": { "welcomeBack": "ਜੀ ਆਇਆਂ ਨੂੰ", "signIn": "ਸਾਈਨ ਇਨ", "createAccount": "ਖਾਤਾ ਬਣਾਓ", "email": "ਈਮੇਲ", "password": "ਪਾਸਵਰਡ", "mpin": "MPIN", "verify": "ਤਸਦੀਕ ਕਰੋ", "forgotPassword": "ਪਾਸਵਰਡ ਭੁੱਲ ਗਏ?" }
+}

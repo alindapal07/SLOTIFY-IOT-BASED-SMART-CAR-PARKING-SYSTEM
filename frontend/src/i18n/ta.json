@@ -1,0 +1,5 @@
+{
+  "nav": { "home": "முகப்பு", "map": "வரைபடம்", "wallet": "வாலட்", "vehicles": "வாகனங்கள்", "dashboard": "டாஷ்போர்டு", "ai": "AI நுண்ணறிவு", "login": "உள்நுழை" },
+  "dashboard": { "welcome": "வரவேற்கிறோம்", "welcomeSub": "உங்கள் ஸ்மார்ட் பார்க்கிங் உதவியாளர்", "activeSession": "செயலில் உள்ள அமர்வு", "noActive": "செயலில் உள்ள முன்பதிவு இல்லை", "findParking": "பார்க்கிங் கண்டறியவும்", "quickActions": "விரைவான செயல்கள்", "recentBookings": "சமீபத்திய முன்பதிவுகள்", "walletBalance": "வாலட் இருப்பு" },
+  "auth": { "welcomeBack": "மீண்டும் வருக", "signIn": "உள்நுழை", "createAccount": "கணக்கை உருவாக்கு", "email": "மின்னஞ்சல்", "password": "கடவுச்சொல்", "mpin": "MPIN", "verify": "சரிபார்", "forgotPassword": "கடவுச்சொல்லை மறந்துவிட்டீர்களா?" }
+}

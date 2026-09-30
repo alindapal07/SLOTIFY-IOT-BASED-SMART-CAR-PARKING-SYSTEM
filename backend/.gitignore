@@ -1,0 +1,47 @@
+# Backend .gitignore
+
+# Dependencies
+node_modules/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Logs
+logs/
+*.log
+
+# Build & Coverage
+coverage/
+dist/
+build/
+
+# Temporary files
+.tmp/
+temp/
+
+# Database dumps and backups
+backups/
+*.dump
+*.bson
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor directories
+.vscode/
+.idea/
+
+# Package manager logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# SSL/TLS & Secrets
+*.pem
+*.key
+*.crt
+secrets/
+credentials/

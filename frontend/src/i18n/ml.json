@@ -1,0 +1,5 @@
+{
+  "nav": { "home": "ഹോം", "map": "മാപ്പ്", "wallet": "വാലറ്റ്", "vehicles": "വാഹനങ്ങൾ", "dashboard": "ഡാഷ്ബോർഡ്", "ai": "AI ഇൻസൈറ്റുകൾ", "login": "ലോഗിൻ" },
+  "dashboard": { "welcome": "സ്വാഗതം", "welcomeSub": "നിങ്ങളുടെ സ്മാർട്ട് പാർക്കിംഗ് സഹായി", "activeSession": "സജീവ സെഷൻ", "noActive": "സജീവ ബുക്കിംഗ് ഇല്ല", "findParking": "പാർക്കിംഗ് കണ്ടെത്തുക", "quickActions": "ദ്രുത നടപടികൾ", "recentBookings": "സമീപകാല ബുക്കിംഗുകൾ", "walletBalance": "വാലറ്റ് ബാലൻസ്" },
+  "auth": { "welcomeBack": "സ്വാഗതം", "signIn": "ലോഗിൻ", "createAccount": "അക്കൗണ്ട് സൃഷ്ടിക്കുക", "email": "ഇമെയിൽ", "password": "പാസ്‌വേഡ്", "mpin": "MPIN", "verify": "പരിശോധിക്കുക", "forgotPassword": "പാസ്‌വേഡ് മറന്നുപോയോ?" }
+}

@@ -1,0 +1,144 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+@import 'leaflet/dist/leaflet.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-asphalt-100 text-asphalt-900 antialiased font-sans transition-colors duration-300;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  }
+  
+  .dark body {
+    @apply bg-asphalt-950 text-asphalt-100 transition-colors duration-300 overflow-x-hidden;
+  }
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { @apply bg-transparent; }
+::-webkit-scrollbar-thumb { @apply bg-asphalt-300 dark:bg-asphalt-800 rounded-full hover:bg-asphalt-400; }
+
+@layer components {
+  /* Solid modern cards replacing glassmorphism */
+  .glass-card {
+    @apply bg-white border border-asphalt-200 shadow-soft rounded-card overflow-hidden transition-all duration-200;
+  }
+  
+  .dark .glass-card {
+    @apply bg-parking-card border border-asphalt-800/80 shadow-none rounded-card overflow-hidden transition-all duration-200;
+  }
+
+  /* Stripe/Apple style solid buttons */
+  .btn-primary {
+    @apply px-4 py-2.5 bg-parking-primary hover:bg-blue-700 text-white font-semibold rounded-lg shadow-sm transition-all duration-150 active:scale-[0.98] outline-none focus:ring-2 focus:ring-blue-500/50 focus:ring-offset-2 dark:focus:ring-offset-parking-dark;
+  }
+
+  .btn-secondary {
+    @apply px-4 py-2.5 bg-asphalt-200 hover:bg-asphalt-300 text-asphalt-800 font-semibold rounded-lg transition-all duration-150 active:scale-[0.98] outline-none focus:ring-2 focus:ring-asphalt-400/50 dark:bg-asphalt-800 dark:hover:bg-asphalt-700 dark:text-asphalt-100;
+  }
+
+  /* Form Elements */
+  .form-input {
+    @apply w-full bg-white dark:bg-asphalt-900 border border-asphalt-200 dark:border-asphalt-800 rounded-lg px-4 py-3 text-asphalt-900 dark:text-white transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-parking-primary/50 focus:border-parking-primary;
+  }
+
+  /* Tables */
+  .table-container {
+    @apply w-full overflow-x-auto border border-asphalt-200 dark:border-asphalt-800 rounded-lg;
+  }
+  
+  .table-el {
+    @apply w-full text-left text-sm border-collapse;
+  }
+  
+  .table-th {
+    @apply py-3.5 px-4 bg-asphalt-100 dark:bg-asphalt-900 text-asphalt-600 dark:text-asphalt-400 font-bold border-b border-asphalt-200 dark:border-asphalt-800;
+  }
+  
+  .table-td {
+    @apply py-3.5 px-4 bg-white dark:bg-parking-card text-asphalt-800 dark:text-asphalt-200 border-b border-asphalt-100 dark:border-asphalt-800/50 last:border-0;
+  }
+
+  /* Modern Solid Badges */
+  .badge-emerald {
+    @apply px-2.5 py-1 bg-green-50 dark:bg-green-950/30 text-green-700 dark:text-green-400 border border-green-200 dark:border-green-800/30 rounded-full text-xs font-bold;
+  }
+  
+  .badge-blue {
+    @apply px-2.5 py-1 bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-400 border border-blue-200 dark:border-blue-800/30 rounded-full text-xs font-bold;
+  }
+
+  .badge-yellow {
+    @apply px-2.5 py-1 bg-yellow-50 dark:bg-yellow-950/30 text-yellow-700 dark:text-yellow-400 border border-yellow-200 dark:border-yellow-800/30 rounded-full text-xs font-bold;
+  }
+
+  .badge-red {
+    @apply px-2.5 py-1 bg-red-50 dark:bg-red-950/30 text-red-700 dark:text-red-400 border border-red-200 dark:border-red-800/30 rounded-full text-xs font-bold;
+  }
+}
+
+/* Subtle transitions */
+main {
+  animation: fadeIn 0.15s ease-out;
+}
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Map Popups and controls */
+.leaflet-container {
+  z-index: 1;
+  font-family: 'Inter', system-ui, sans-serif;
+}
+
+.leaflet-popup-content-wrapper {
+  @apply rounded-xl border border-asphalt-200 dark:border-asphalt-800 dark:bg-parking-card text-asphalt-900 dark:text-white p-2 shadow-soft !important;
+  font-family: 'Inter', system-ui, sans-serif !important;
+}
+
+.leaflet-popup-tip {
+  @apply dark:bg-parking-card !important;
+}
+
+.leaflet-popup-content {
+  margin: 8px 10px !important;
+  font-size: 13px !important;
+}
+
+/* Remove default blue outline on custom markers */
+.zone-marker,
+.user-location-marker {
+  background: transparent !important;
+  border: none !important;
+}
+
+/* User location pulse animation */
+@keyframes pulse {
+  0%, 100% { transform: scale(1); opacity: 0.6; }
+  50% { transform: scale(2.2); opacity: 0; }
+}
+
+/* Leaflet control buttons dark mode */
+.dark .leaflet-control-zoom a {
+  background-color: #1e293b !important;
+  color: #e2e8f0 !important;
+  border-color: #334155 !important;
+}
+
+.dark .leaflet-control-zoom a:hover {
+  background-color: #334155 !important;
+}
+
+/* Leaflet attribution dark mode */
+.dark .leaflet-control-attribution {
+  background: rgba(15, 23, 42, 0.85) !important;
+  color: #94a3b8 !important;
+}
+
+.dark .leaflet-control-attribution a {
+  color: #94a3b8 !important;
+}
