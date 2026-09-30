@@ -1,28 +1,2 @@
-const mongoose = require('mongoose');
+module.exports = require('../src/models/Notification.js');
 
-const notificationSchema = new mongoose.Schema({
-  userId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: true,
-  },
-  title: {
-    type: String,
-    required: true,
-  },
-  message: {
-    type: String,
-    required: true,
-  },
-  type: {
-    type: String,
-    enum: ['INFO', 'BOOKING_CONFIRMATION', 'REMINDER', 'EXTENSION_REMINDER', 'CANCELLATION', 'REFUND', 'PENALTY', 'UPDATE'],
-    default: 'INFO',
-  },
-  isRead: {
-    type: Boolean,
-    default: false,
-  }
-}, { timestamps: true });
-
-module.exports = mongoose.model('Notification', notificationSchema);
