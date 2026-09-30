@@ -335,7 +335,7 @@ exports.createZone = async (req, res) => {
         basePricePerHour: price,
         vehicleTypesAllowed: vehicleTypesAllowed || ['Car', 'SUV', 'EV', 'Motorcycle'],
         isApproved: true,
-        verificationStatus: 'Verified',
+        verificationStatus: 'Approved',
         totalArea: parseFloat(totalArea) || 0,
         floorsCount: parseInt(floorsCount) || 1,
         entryGatesCount: parseInt(entryGatesCount) || 1,
